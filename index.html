@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini Game Battle</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- defer = the HTML is parsed first, then script.js runs -->
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <main class="app">
+
+    <!-- ============ 1. MAIN MENU ============ -->
+    <section id="screen-menu" class="screen screen--center active">
+      <div class="card menu-card">
+        <div class="menu-logo" aria-hidden="true">🎲</div>
+        <h1>Mini Game Battle</h1>
+        <p class="subtitle">Two players &middot; one board &middot; five minutes</p>
+        <button id="btn-play-with-friend" class="btn btn--primary" type="button">Play with a Friend</button>
+      </div>
+    </section>
+
+    <!-- ============ 2. INSTRUCTIONS ============ -->
+    <section id="screen-instructions" class="screen screen--center">
+      <div class="card card--wide">
+        <h2>How to Play</h2>
+        <ul class="instructions">
+          <li>You take turns. Roll the dice and move forward that many tiles.</li>
+          <li>The tile you land on tells you which minigame you play.</li>
+          <li>A correct action gives <strong>+1 point</strong>.</li>
+          <li>A wrong action gives <strong>&minus;1 point</strong>.</li>
+          <li>Your score never goes below zero.</li>
+          <li>The match lasts <strong>5 minutes</strong>. The timer keeps running the whole time.</li>
+          <li>When the timer reaches 0, the player with the higher score wins.</li>
+          <li>After both players finish one lap, the board gets a new minigame layout.</li>
+        </ul>
+        <div class="button-row">
+          <button id="btn-continue" class="btn btn--primary" type="button">Continue</button>
+          <button id="btn-menu-from-instructions" class="btn btn--ghost" type="button">Main Menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 3. READY ============ -->
+    <section id="screen-ready" class="screen screen--center">
+      <div class="card">
+        <h2>Ready to Play?</h2>
+        <div class="versus">
+          <div class="versus-player"><span class="dot dot--p1"></span> Player 1</div>
+          <div class="versus-vs">vs</div>
+          <div class="versus-player"><span class="dot dot--p2"></span> Player 2</div>
+        </div>
+        <p class="hint">Share one keyboard. Player 1 starts.</p>
+        <div class="button-row">
+          <button id="btn-start-game" class="btn btn--primary" type="button">Play</button>
+          <button id="btn-menu-from-ready" class="btn btn--ghost" type="button">Main Menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 4. MAIN GAME (board) ============ -->
+    <section id="screen-game" class="screen">
+      <header class="topbar">
+        <span class="chip chip--timer">⏱ <span class="js-global-timer">5:00</span></span>
+        <span class="chip chip--turn">Turn: <strong id="current-player-name">Player 1</strong></span>
+        <button id="btn-menu-from-game" class="btn btn--ghost btn--small" type="button">Main Menu</button>
+      </header>
+
+      <div class="scoreboard">
+        <div class="score-card" id="score-card-0">
+          <span class="dot dot--p1"></span>
+          <span class="score-card__name">Player 1</span>
+          <span class="score-card__value" id="player-score-0">0</span>
+        </div>
+        <div class="score-card" id="score-card-1">
+          <span class="dot dot--p2"></span>
+          <span class="score-card__name">Player 2</span>
+          <span class="score-card__value" id="player-score-1">0</span>
+        </div>
+      </div>
+
+      <div id="board" class="board"></div>
+      <p id="board-note" class="board-note" role="status"></p>
+
+      <div class="dice-area">
+        <div id="dice" class="dice" aria-label="Dice">?</div>
+        <div class="dice-area__controls">
+          <button id="btn-roll" class="btn btn--primary" type="button" disabled>Roll Dice</button>
+          <p id="dice-hint" class="hint">Roll the dice to move.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 5. MINIGAME (Stage 1: temporary test game) ============ -->
+    <section id="screen-minigame" class="screen">
+      <header class="minigame-topbar">
+        <div>
+          <h2 id="minigame-name">Minigame</h2>
+          <p id="minigame-instruction" class="instruction">...</p>
+        </div>
+        <div class="minigame-meta">
+          <span class="chip chip--timer">⏱ <span id="minigame-timer">10</span>s</span>
+          <button id="btn-menu-from-minigame" class="btn btn--ghost btn--small" type="button">Main Menu</button>
+        </div>
+      </header>
+      <div id="minigame-area" class="minigame-area"></div>
+    </section>
+
+    <!-- ============ 6. ROUND RESULT (Stage 2) ============ -->
+    <section id="screen-round-result" class="screen screen--center">
+      <div class="card">
+        <p class="eyebrow">Round Result</p>
+        <h2 id="result-game-name">Minigame</h2>
+        <p id="result-summary" class="hint"></p>
+        <p id="result-delta" class="result-delta">No points this round</p>
+        <div class="result-scores">
+          <div class="result-scores__row"><span class="dot dot--p1"></span> <span id="result-score-0">Player 1: 0</span></div>
+          <div class="result-scores__row"><span class="dot dot--p2"></span> <span id="result-score-1">Player 2: 0</span></div>
+        </div>
+        <p><span class="chip chip--timer">⏱ <span class="js-global-timer">5:00</span> left</span></p>
+        <button id="btn-continue-round" class="btn btn--primary" type="button">Continue</button>
+      </div>
+    </section>
+
+    <!-- ============ 7. GAME OVER (Stage 2) ============ -->
+    <section id="screen-game-over" class="screen screen--center">
+      <div class="card">
+        <p class="eyebrow">Time's Up!</p>
+        <h2 id="final-heading">Game Over</h2>
+        <div id="final-scores" class="final-scores"></div>
+        <p id="winner-text" class="winner-text"></p>
+        <div class="button-row">
+          <button id="btn-play-again" class="btn btn--primary" type="button">Play Again</button>
+          <button id="btn-menu-from-gameover" class="btn btn--ghost" type="button">Main Menu</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</body>
+</html>
+
