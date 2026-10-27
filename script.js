@@ -487,102 +487,112 @@ function handleContinueRound() {
    To REPLACE one: swap the id inside MINIGAME_IDS. Nothing else changes.
    ================================================================== */
 
-const MINIGAME_IDS = ['testGame'];   // Stage 3: six real minigames instead
+const MINIGAME_IDS = ['whackAMole'];   // board pool: each appears twice on 12 tiles
 
 const MINIGAME_REGISTRY = {
 
-  /* Temporary Stage 1 test game: click the target (+1),
-     click the empty field (-1). Removed in Stage 3. */
-  testGame: {
-    id: 'testGame',
-    name: 'Target Tap',
-    icon: '🎯',
-    instruction: 'Click the target for +1 point. Click the empty field for -1 point.',
+/* Whack-a-Mole: tap the mole when it pops up; an empty hole costs a point. */
+  whackAMole: {
+    id: 'whackAMole',
+    name: 'Whack-a-Mole',
+    icon: '🔨',
+    instruction: 'Click the mole when it pops up. Clicking an empty hole costs 1 point.',
     _state: null,
 
     start: function (ctx) {
       const self = this;
-      this._state = { targetHit: false, roundPoints: 0 };
+      const state = {
+        holes: [],
+        activeIndex: -1,
+        token: 0,
+        locked: false,
+      };
+      this._state = state;
 
-      const wrap = document.createElement('div');
-      wrap.className = 'tap-wrap';
+      const grid = document.createElement('div');
+      grid.className = 'mole-grid';
+      grid.setAttribute('aria-label', 'Whack-a-Mole');
 
-      const field = document.createElement('div');
-      field.className = 'tap-field';
+      for (let i = 0; i < 9; i++) {
+        const index = i;
+        const hole = document.createElement('button');
+        hole.type = 'button';
+        hole.className = 'mole-hole';
+        hole.setAttribute('aria-label', 'Hole ' + (index + 1));
+        const mole = document.createElement('span');
+        mole.className = 'mole';
+        mole.textContent = '🐹';
+        hole.appendChild(mole);
+        grid.appendChild(hole);
+        state.holes.push(hole);
+        ctx.bindEvent(hole, 'click', function () { handleClick(index); });
+      }
+      ctx.container.appendChild(grid);
 
-      const target = document.createElement('button');
-      target.type = 'button';
-      target.className = 'tap-target';
-      target.textContent = '+';
-      target.setAttribute('aria-label', 'Target');
-
-      const endRow = document.createElement('div');
-      endRow.className = 'test-end-row';
-      const pointsLabel = document.createElement('span');
-      pointsLabel.className = 'test-points';
-      const endBtn = document.createElement('button');
-      endBtn.type = 'button';
-      endBtn.className = 'btn btn--ghost';
-      endBtn.textContent = 'Finish Round';
-
-      field.appendChild(target);
-      endRow.appendChild(pointsLabel);
-      endRow.appendChild(endBtn);
-      wrap.appendChild(field);
-      wrap.appendChild(endRow);
-      ctx.container.appendChild(wrap);
-
-      function updatePointsLabel() {
-        pointsLabel.textContent = 'This round: ' + self._state.roundPoints + ' points';
+      function hideMole() {
+        if (state.activeIndex >= 0) {
+          state.holes[state.activeIndex].classList.remove('is-active');
+        }
+        state.activeIndex = -1;
       }
 
-      function showTarget() {
-        if (self._state === null) return;
-        target.style.left = (12 + Math.random() * 76) + '%';
-        target.style.top = (12 + Math.random() * 76) + '%';
-        target.classList.add('is-visible');
-        self._state.targetHit = false;    // the next hit may score again
+      function spawnMole() {
+        if (state.moleActive) return;
+        hideMole();
+        if (!ctx.isMatchActive()) return;
+        state.activeIndex = randomInt(0, 8);
+        state.moleActive = true;
+        state.holes[state.activeIndex].classList.add('is-active');
+        const myToken = ++state.token;
+        ctx.scheduleTimeout(function () {
+          if (self._state === null || state.token !== myToken) return;
+          hideMole();
+          state.moleActive = false;
+          scheduleNext(700);
+        }, 800);
       }
 
-      // +1: clicking the target. One hit = one point (hit lock).
-      ctx.bindEvent(target, 'click', function (event) {
-        event.stopPropagation();          // the field must not see this click
-        if (self._state === null || !ctx.isMatchActive()) return;
-        if (self._state.targetHit) return;
-        self._state.targetHit = true;
-        ctx.addPoints(1);
-        self._state.roundPoints += 1;
-        updatePointsLabel();
-        showFloat(field, '+1', true);
-        target.classList.remove('is-visible');
-        ctx.scheduleTimeout(showTarget, 350);   // new target shortly after
-      });
+      function scheduleNext(delay) {
+        if (!ctx.isMatchActive()) return;
+        if (state.moleActive) return;
+        ctx.scheduleTimeout(spawnMole, delay === undefined ? 700 : delay);
+      }
 
-      // -1: clicking the empty field.
-      ctx.bindEvent(field, 'click', function () {
-        if (self._state === null || !ctx.isMatchActive()) return;
-        ctx.addPoints(-1);
-        self._state.roundPoints -= 1;
-        updatePointsLabel();
-        showFloat(field, '-1', false);
-      });
+      scheduleNext(700);
 
-      ctx.bindEvent(endBtn, 'click', function () {
-        if (self._state === null) return;
-        ctx.endMinigame();
-      });
+      function handleClick(index) {
+        if (self._state === null || !ctx.isMatchActive() || state.locked) return;
+        state.locked = true;
+        ctx.scheduleTimeout(function () { state.locked = false; }, 250);
 
-      updatePointsLabel();
-      showTarget();
+        if (state.activeIndex >= 0 && index === state.activeIndex) {
+          state.token += 1;
+          hideMole();
+          state.moleActive = false;
+          ctx.addPoints(1);
+          showFloat(grid, '+1', true);
+          scheduleNext(80);
+        } else {
+          ctx.addPoints(-1);
+          showFloat(grid, '-1', false);
+        }
+      }
+
+      scheduleNext();
     },
 
     cleanup: function () {
-      // Timeouts and listeners are cleared automatically by the system;
-      // the game only drops its own state here.
       this._state = null;
     },
   },
-};
+  
+     
+  
+    
+    
+    
+    
+    };
 
 /* ------------------------------------------------------------------ *
  * 8. Dice, movement, turns

@@ -357,3 +357,45 @@ p  { margin: var(--space-2) 0; }
 
 
 
+/* ---- Whack-a-Mole ---- */
+.mole-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin: 0 auto;
+  max-width: 300px;
+}
+
+.mole-hole {
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.mole-hole:hover {
+  transform: scale(1.05);
+}
+
+.mole {
+  width: 40px;
+  height: 40px;
+  display: none;
+  font-size: 1.5rem;
+}
+
+.mole-hole.is-active .mole {
+  display: block;
+  animation: pop 0.3s ease;
+}
+
+@keyframes pop {
+  from { transform: scale(0.8); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
