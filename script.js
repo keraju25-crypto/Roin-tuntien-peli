@@ -487,7 +487,7 @@ function handleContinueRound() {
    To REPLACE one: swap the id inside MINIGAME_IDS. Nothing else changes.
    ================================================================== */
 
-const MINIGAME_IDS = ['whackAMole'];   // board pool: each appears twice on 12 tiles
+const MINIGAME_IDS = ['whackAMole', 'reactionTest'];   // the board shuffles both games across its tiles
 
 const MINIGAME_REGISTRY = {
 
@@ -579,6 +579,104 @@ const MINIGAME_REGISTRY = {
       }
 
       scheduleNext();
+    },
+
+    cleanup: function () {
+      this._state = null;
+    },
+  },
+
+  /* Reaction Test: wait for green, then react once as fast as you can. */
+  reactionTest: {
+    id: 'reactionTest',
+    name: 'Reaction Test',
+    icon: '🚦',
+    instruction: 'Wait for GREEN LIGHT, then click as fast as you can. Clicking on RED LIGHT is a false start.',
+    _state: null,
+
+    start: function (ctx) {
+      const self = this;
+      const state = {
+        phase: 'red',
+        greenAt: 0,
+      };
+      this._state = state;
+
+      const game = document.createElement('div');
+      game.className = 'reaction-test';
+
+      const signal = document.createElement('div');
+      signal.className = 'reaction-signal is-red';
+      signal.setAttribute('role', 'status');
+      signal.setAttribute('aria-live', 'assertive');
+      signal.textContent = 'RED LIGHT';
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'reaction-button';
+      button.textContent = 'Wait for green...';
+
+      const feedback = document.createElement('p');
+      feedback.className = 'reaction-feedback';
+      feedback.textContent = 'Do not click yet. One chance, up to 10 points.';
+
+      game.appendChild(signal);
+      game.appendChild(button);
+      game.appendChild(feedback);
+      ctx.container.appendChild(game);
+
+      function finishAttempt(points, message, feedbackMs) {
+        if (self._state !== state || state.phase === 'done') return;
+        state.phase = 'done';
+        button.disabled = true;
+        feedback.textContent = message;
+        if (points > 0) ctx.addPoints(points);
+        ctx.scheduleTimeout(function () {
+          ctx.endMinigame({ summary: message });
+        }, feedbackMs === undefined ? 900 : feedbackMs);
+      }
+
+      ctx.bindEvent(button, 'click', function () {
+        if (self._state !== state || state.phase === 'done') return;
+
+        if (state.phase === 'red') {
+          finishAttempt(0, 'False start! 0 / 10 points.');
+          return;
+        }
+
+        const reactionMs = performance.now() - state.greenAt;
+        let points = 1;
+        if (reactionMs < 200) points = 10;
+        else if (reactionMs < 300) points = 9;
+        else if (reactionMs < 450) points = 8;
+        else if (reactionMs < 650) points = 7;
+        else if (reactionMs < 900) points = 6;
+        else if (reactionMs < 1200) points = 5;
+        else if (reactionMs < 1600) points = 4;
+        else if (reactionMs < 2200) points = 3;
+        else if (reactionMs < 3000) points = 2;
+
+        const message = Math.round(reactionMs) + ' ms — ' + points + ' / 10 points!';
+        finishAttempt(points, message);
+      });
+
+      // Random wait keeps the green light from becoming predictable.
+      ctx.scheduleTimeout(function () {
+        if (self._state !== state || state.phase !== 'red') return;
+        state.phase = 'green';
+        state.greenAt = performance.now();
+        signal.classList.remove('is-red');
+        signal.classList.add('is-green');
+        signal.textContent = 'GREEN LIGHT';
+        button.textContent = 'CLICK NOW!';
+        feedback.textContent = 'Go!';
+      }, randomInt(1400, 3600));
+
+      // End with a visible zero-score result shortly before the shared 10-second timer.
+      ctx.scheduleTimeout(function () {
+        if (self._state !== state || state.phase === 'done') return;
+        finishAttempt(0, 'Too slow! 0 / 10 points.', 600);
+      }, (MINIGAME_SECONDS * 1000) - 1000);
     },
 
     cleanup: function () {
