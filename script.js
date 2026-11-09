@@ -487,7 +487,7 @@ function handleContinueRound() {
    To REPLACE one: swap the id inside MINIGAME_IDS. Nothing else changes.
    ================================================================== */
 
-const MINIGAME_IDS = ['whackAMole', 'reactionTest'];   // the board shuffles both games across its tiles
+const MINIGAME_IDS = ['whackAMole', 'reactionTest', 'mathQuiz', 'memoryGame'];   // the board shuffles all implemented games across its tiles
 
 const MINIGAME_REGISTRY = {
 
@@ -677,6 +677,260 @@ const MINIGAME_REGISTRY = {
         if (self._state !== state || state.phase === 'done') return;
         finishAttempt(0, 'Too slow! 0 / 10 points.', 600);
       }, (MINIGAME_SECONDS * 1000) - 1000);
+    },
+
+    cleanup: function () {
+      this._state = null;
+    },
+  },
+
+  /* Math Quiz: answer quick arithmetic questions before the shared timer ends. */
+  mathQuiz: {
+    id: 'mathQuiz',
+    name: 'Math Quiz',
+    icon: '➗',
+    instruction: 'Choose the correct answer. Get +1 for a correct answer and −1 for a wrong answer.',
+    _state: null,
+
+    start: function (ctx) {
+      const self = this;
+      const state = {
+        answered: false,
+        correctAnswer: 0,
+        buttons: [],
+      };
+      this._state = state;
+
+      const quiz = document.createElement('div');
+      quiz.className = 'math-quiz';
+
+      const question = document.createElement('h3');
+      question.className = 'math-question';
+      question.setAttribute('aria-live', 'polite');
+
+      const answers = document.createElement('div');
+      answers.className = 'math-answers';
+
+      const feedback = document.createElement('p');
+      feedback.className = 'math-feedback';
+      feedback.setAttribute('role', 'status');
+
+      for (let i = 0; i < 4; i++) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'math-answer';
+        state.buttons.push(button);
+        answers.appendChild(button);
+
+        ctx.bindEvent(button, 'click', function () {
+          if (self._state !== state || state.answered || !ctx.isMatchActive()) return;
+          state.answered = true;
+          const selected = Number(button.dataset.answer);
+          const isCorrect = selected === state.correctAnswer;
+          ctx.addPoints(isCorrect ? 1 : -1);
+
+          state.buttons.forEach(function (answerButton) {
+            answerButton.disabled = true;
+            const answerValue = Number(answerButton.dataset.answer);
+            if (answerValue === state.correctAnswer) answerButton.classList.add('is-correct');
+            if (answerButton === button && !isCorrect) answerButton.classList.add('is-wrong');
+          });
+
+          feedback.classList.remove('is-correct', 'is-wrong');
+          feedback.classList.add(isCorrect ? 'is-correct' : 'is-wrong');
+          feedback.textContent = isCorrect ? 'Correct! +1 point' : 'Not quite. −1 point';
+
+          ctx.scheduleTimeout(function () {
+            if (self._state !== state) return;
+            showQuestion();
+          }, 650);
+        });
+      }
+
+      quiz.appendChild(question);
+      quiz.appendChild(answers);
+      quiz.appendChild(feedback);
+      ctx.container.appendChild(quiz);
+
+      function makeQuestion() {
+        const operation = randomInt(0, 2);
+        let first;
+        let second;
+        let symbol;
+        let correct;
+
+        if (operation === 0) {
+          first = randomInt(2, 20);
+          second = randomInt(2, 20);
+          symbol = '+';
+          correct = first + second;
+        } else if (operation === 1) {
+          first = randomInt(2, 30);
+          second = randomInt(1, first);
+          symbol = '−';
+          correct = first - second;
+        } else {
+          first = randomInt(2, 10);
+          second = randomInt(2, 10);
+          symbol = '×';
+          correct = first * second;
+        }
+
+        const choices = new Set([correct]);
+        while (choices.size < 4) {
+          const offset = randomInt(1, 10);
+          let candidate = correct + (Math.random() < 0.5 ? -offset : offset);
+          if (candidate < 0) candidate = correct + offset;
+          choices.add(candidate);
+        }
+
+        return {
+          text: first + ' ' + symbol + ' ' + second + ' = ?',
+          correct: correct,
+          choices: shuffleArray(Array.from(choices)),
+        };
+      }
+
+      function showQuestion() {
+        if (self._state !== state || !ctx.isMatchActive()) return;
+        const next = makeQuestion();
+        state.correctAnswer = next.correct;
+        state.answered = false;
+        question.textContent = next.text;
+        feedback.textContent = '';
+        feedback.classList.remove('is-correct', 'is-wrong');
+
+        state.buttons.forEach(function (button, index) {
+          button.textContent = String(next.choices[index]);
+          button.dataset.answer = String(next.choices[index]);
+          button.disabled = false;
+          button.classList.remove('is-correct', 'is-wrong');
+        });
+      }
+
+      showQuestion();
+    },
+
+    cleanup: function () {
+      this._state = null;
+    },
+  },
+
+  /* Memory Game: find six pairs before the shared minigame timer expires. */
+  memoryGame: {
+    id: 'memoryGame',
+    name: 'Memory Game',
+    icon: '🃏',
+    instruction: 'Flip two cards to find a matching pair. Matches earn +1; misses lose 1 point.',
+    _state: null,
+
+    start: function (ctx) {
+      const self = this;
+      const state = {
+        cards: [],
+        flipped: [],
+        matchedPairs: 0,
+        locked: false,
+        finished: false,
+      };
+      this._state = state;
+
+      const game = document.createElement('div');
+      game.className = 'memory-game';
+
+      const progress = document.createElement('p');
+      progress.className = 'memory-progress';
+      progress.textContent = 'Pairs found: 0 / 6';
+      progress.setAttribute('aria-live', 'polite');
+
+      const grid = document.createElement('div');
+      grid.className = 'memory-grid';
+      grid.setAttribute('aria-label', 'Memory Game cards');
+
+      const feedback = document.createElement('p');
+      feedback.className = 'memory-feedback';
+      feedback.setAttribute('role', 'status');
+      feedback.textContent = 'Find the matching pairs!';
+
+      const symbols = ['★', '◆', '●', '▲', '♥', '✿'];
+      const deck = [];
+      symbols.forEach(function (symbol) {
+        deck.push({ symbol: symbol, matched: false });
+        deck.push({ symbol: symbol, matched: false });
+      });
+      state.cards = shuffleArray(deck);
+
+      state.cards.forEach(function (card, index) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'memory-card';
+        button.setAttribute('aria-label', 'Face-down card');
+
+        const face = document.createElement('span');
+        face.className = 'memory-card__face';
+        face.textContent = '?';
+        button.appendChild(face);
+        card.button = button;
+        card.face = face;
+
+        ctx.bindEvent(button, 'click', function () {
+          if (self._state !== state || state.finished || state.locked || !ctx.isMatchActive()) return;
+          if (card.matched || state.flipped.indexOf(index) !== -1) return;
+
+          card.face.textContent = card.symbol;
+          card.button.classList.add('is-flipped');
+          card.button.setAttribute('aria-label', 'Face-up card: ' + card.symbol);
+          state.flipped.push(index);
+          if (state.flipped.length < 2) return;
+
+          const first = state.cards[state.flipped[0]];
+          const second = state.cards[state.flipped[1]];
+          if (first.symbol === second.symbol) {
+            first.matched = true;
+            second.matched = true;
+            first.button.classList.add('is-matched');
+            second.button.classList.add('is-matched');
+            first.button.setAttribute('aria-label', 'Matched pair: ' + first.symbol);
+            second.button.setAttribute('aria-label', 'Matched pair: ' + second.symbol);
+            first.button.disabled = true;
+            second.button.disabled = true;
+            state.matchedPairs += 1;
+            ctx.addPoints(1);
+            progress.textContent = 'Pairs found: ' + state.matchedPairs + ' / 6';
+            feedback.textContent = 'Match! +1 point';
+            state.flipped = [];
+
+            if (state.matchedPairs === 6) {
+              state.finished = true;
+              ctx.endMinigame({ summary: 'All six pairs found!' });
+            }
+            return;
+          }
+
+          state.locked = true;
+          ctx.addPoints(-1);
+          feedback.textContent = 'No match. −1 point';
+          ctx.scheduleTimeout(function () {
+            if (self._state !== state || state.finished) return;
+            state.flipped.forEach(function (cardIndex) {
+              const flippedCard = state.cards[cardIndex];
+              flippedCard.face.textContent = '?';
+              flippedCard.button.classList.remove('is-flipped');
+              flippedCard.button.setAttribute('aria-label', 'Face-down card');
+            });
+            state.flipped = [];
+            state.locked = false;
+            feedback.textContent = 'Find the matching pairs!';
+          }, 650);
+        });
+
+        grid.appendChild(button);
+      });
+
+      game.appendChild(progress);
+      game.appendChild(grid);
+      game.appendChild(feedback);
+      ctx.container.appendChild(game);
     },
 
     cleanup: function () {

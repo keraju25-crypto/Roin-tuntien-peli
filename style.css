@@ -479,6 +479,133 @@ p  { margin: var(--space-2) 0; }
   .reaction-signal.is-green { animation: none; }
 }
 
+/* ---- Math Quiz ---- */
+.math-quiz {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+  width: min(100%, 520px);
+  margin: 0 auto;
+}
+
+.math-question {
+  margin: 0;
+  color: var(--color-text);
+  font-size: clamp(2rem, 8vw, 3rem);
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.math-answers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.math-answer {
+  min-height: 68px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.math-answer:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--color-primary);
+  background: #f3f2ff;
+}
+
+.math-answer:disabled { cursor: default; }
+.math-answer.is-correct { border-color: var(--color-correct); background: #dcfce7; color: #166534; }
+.math-answer.is-wrong { border-color: var(--color-wrong); background: #fee2e2; color: #991b1b; }
+.math-feedback { min-height: 1.5em; margin: 0; text-align: center; font-weight: 700; }
+.math-feedback.is-correct { color: var(--color-correct); }
+.math-feedback.is-wrong { color: var(--color-wrong); }
+
+/* ---- Memory Game ---- */
+.memory-game {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: min(100%, 560px);
+  margin: 0 auto;
+}
+
+.memory-progress {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(6px, 1.5vw, 10px);
+  width: 100%;
+}
+
+.memory-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 60px;
+  aspect-ratio: 1.2 / 1;
+  padding: 0;
+  border: 2px solid #c7d2fe;
+  border-radius: var(--radius-md);
+  background: #4f46e5;
+  color: #fff;
+  font: inherit;
+  font-size: clamp(1.7rem, 5vw, 2.5rem);
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.14s ease, background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.memory-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: #4338ca;
+}
+
+.memory-card.is-flipped {
+  border-color: var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+  animation: memory-card-flip 0.18s ease-out;
+}
+
+.memory-card.is-matched {
+  border-color: #16a34a;
+  background: #dcfce7;
+  color: #166534;
+  cursor: default;
+}
+
+.memory-card:disabled { opacity: 1; }
+.memory-card__face { line-height: 1; }
+.memory-feedback { min-height: 1.5em; margin: 0; color: var(--color-muted); font-weight: 700; text-align: center; }
+
+@keyframes memory-card-flip {
+  from { transform: rotateY(85deg) scale(0.92); }
+  to { transform: rotateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memory-card.is-flipped { animation: none; }
+}
+
 @keyframes pop {
   from { transform: scale(0.8); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
