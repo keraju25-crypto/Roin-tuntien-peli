@@ -18,6 +18,19 @@
         <h1>Mini Game Battle</h1>
         <p class="subtitle">Two players &middot; one board &middot; five minutes</p>
         <button id="btn-play-with-friend" class="btn btn--primary" type="button">Play with a Friend</button>
+        <button id="btn-open-practice" class="btn btn--ghost" type="button">Practice Range</button>
+      </div>
+    </section>
+
+    <!-- ============ PRACTICE RANGE ============ -->
+    <section id="screen-practice" class="screen screen--center">
+      <div class="card card--wide practice-card">
+        <h2>Practice Range</h2>
+        <p class="hint">Choose a minigame to practice. Practice points do not affect a match.</p>
+        <div id="practice-games" class="practice-games"></div>
+        <div class="button-row">
+          <button id="btn-menu-from-practice" class="btn btn--ghost" type="button">Main Menu</button>
+        </div>
       </div>
     </section>
 
@@ -101,6 +114,7 @@
         </div>
         <div class="minigame-meta">
           <span class="chip chip--timer">⏱ <span id="minigame-timer">10</span>s</span>
+          <span id="practice-score-chip" class="chip practice-score" hidden>Practice: <strong id="practice-score">0</strong></span>
           <button id="btn-menu-from-minigame" class="btn btn--ghost btn--small" type="button">Main Menu</button>
         </div>
       </header>
@@ -120,6 +134,21 @@
         </div>
         <p><span class="chip chip--timer">⏱ <span class="js-global-timer">5:00</span> left</span></p>
         <button id="btn-continue-round" class="btn btn--primary" type="button">Continue</button>
+      </div>
+    </section>
+
+    <!-- ============ PRACTICE RESULT ============ -->
+    <section id="screen-practice-result" class="screen screen--center">
+      <div class="card">
+        <p class="eyebrow">Practice Complete</p>
+        <h2 id="practice-result-name">Minigame</h2>
+        <p id="practice-result-summary" class="hint"></p>
+        <p class="practice-result-score">Practice score: <strong id="practice-result-score">0</strong></p>
+        <div class="button-row">
+          <button id="btn-practice-retry" class="btn btn--primary" type="button">Try Again</button>
+          <button id="btn-practice-list" class="btn btn--ghost" type="button">Choose Another Game</button>
+          <button id="btn-menu-from-practice-result" class="btn btn--ghost" type="button">Main Menu</button>
+        </div>
       </div>
     </section>
 

@@ -20,6 +20,7 @@
 const BOARD_SIZE = 12;          // tiles on the board
 const MATCH_DURATION_MS = 5 * 60 * 1000;  // the global match lasts 5 minutes
 const MINIGAME_SECONDS = 10;    // each minigame normally lasts 10 seconds
+const MEMORY_GAME_SECONDS = 14; // Memory Game gets extra time to find pairs
 const GLOBAL_TICK_MS = 250;     // how often the global timer display updates
 const MINIGAME_TICK_MS = 100;   // how often the minigame timer updates
 const MOVE_STEP_MS = 260;       // pause between movement steps (animation)
@@ -52,6 +53,9 @@ const gameState = {
   boardNoteTimerId: null,
   minigameTimeouts: new Set(),  // timeouts created by the current minigame
   minigameListeners: [],        // listeners created by the current minigame
+  practiceMode: false,
+  practiceScore: 0,
+  practiceGameId: null,
 };
 
 // DOM elements are looked up once, in cacheDom().
@@ -103,6 +107,8 @@ const SCREENS = {
   minigame: 'screen-minigame',
   roundResult: 'screen-round-result',
   gameOver: 'screen-game-over',
+  practice: 'screen-practice',
+  practiceResult: 'screen-practice-result',
 };
 
 function showScreen(stateName) {
@@ -124,9 +130,12 @@ function cacheDom() {
     'current-player-name', 'score-card-0', 'score-card-1',
     'player-score-0', 'player-score-1',
     'minigame-name', 'minigame-instruction', 'minigame-area', 'minigame-timer',
+    'btn-menu-from-minigame',
     'result-game-name', 'result-summary', 'result-delta',
     'result-score-0', 'result-score-1', 'btn-continue-round',
     'final-heading', 'final-scores', 'winner-text',
+    'practice-games', 'practice-score-chip', 'practice-score',
+    'practice-result-name', 'practice-result-summary', 'practice-result-score',
   ];
   ids.forEach(function (id) {
     dom[id] = document.getElementById(id);
@@ -264,13 +273,20 @@ function showBoardNote(text) {
  *    turns independent from each other.
  * ------------------------------------------------------------------ */
 function isMatchActive() {
-  // The match counts as active until the 5 minutes are over.
+  // Practice is independent of the global match timer and match-over flag.
+  if (gameState.practiceMode) return gameState.state === 'minigame';
   return !gameState.matchOver;
 }
 
 function addPoints(delta) {
   // The only way minigames change scores; each game chooses the reward, floor at 0.
   if (gameState.state !== 'minigame') return false;
+  if (gameState.practiceMode) {
+    gameState.practiceScore = Math.max(0, gameState.practiceScore + delta);
+    if (dom['practice-score']) dom['practice-score'].textContent = String(gameState.practiceScore);
+    return true;
+  }
+  if (gameState.matchOver) return false;
   const player = currentPlayer();
   player.score = Math.max(0, player.score + delta);
   updateScoreDisplay();
@@ -391,8 +407,10 @@ function startMinigame(gameId) {
   dom['minigame-name'].textContent = def.name;
   dom['minigame-instruction'].textContent = def.instruction;
   dom['minigame-area'].innerHTML = '';
+  dom['practice-score-chip'].hidden = !gameState.practiceMode;
+  dom['btn-menu-from-minigame'].textContent = gameState.practiceMode ? 'Practice Range' : 'Main Menu';
   showScreen('minigame');
-  startMinigameTimer(MINIGAME_SECONDS);   // every minigame gets 10 seconds
+  startMinigameTimer(def.durationSeconds || MINIGAME_SECONDS);
 
   // The "toolbox" every minigame receives — this is what makes games pluggable.
   def.start({
@@ -421,6 +439,13 @@ function endMinigame(result) {
   // ctx.endMinigame() itself, or its 10-second timer calls it for you.
   if (gameState.state !== 'minigame') return;   // double calls are ignored
   const def = MINIGAME_REGISTRY[gameState.activeMinigameId];
+  if (gameState.practiceMode) {
+    const name = def ? def.name : 'Minigame';
+    const summary = (result && result.summary) || '';
+    stopActiveMinigame();
+    showPracticeResult(name, summary);
+    return;
+  }
   const delta = currentPlayer().score - gameState.roundStartScore;
   stopActiveMinigame();   // stops timer + timeouts + listeners + cleanup
   showRoundResult({
@@ -465,6 +490,83 @@ function handleContinueRound() {
   setRollEnabled(true);
 }
 
+const PRACTICE_DESCRIPTIONS = {
+  whackAMole: 'Hit the mole when it appears and avoid empty holes.',
+  reactionTest: 'Wait for green, then react as quickly as you can.',
+  mathQuiz: 'Solve quick addition, subtraction, and multiplication questions.',
+  memoryGame: 'Flip cards and find as many matching pairs as you can.',
+  typingChallenge: 'Type each displayed word or sentence accurately.',
+  numberSequence: 'Spot the pattern and choose the next number.',
+};
+
+function openPracticeRange() {
+  if (gameState.state === 'minigame') stopActiveMinigame();
+  gameState.practiceMode = false;
+  gameState.practiceGameId = null;
+  gameState.practiceScore = 0;
+  dom['practice-score-chip'].hidden = true;
+  dom['practice-games'].innerHTML = '';
+
+  MINIGAME_IDS.forEach(function (gameId) {
+    const def = MINIGAME_REGISTRY[gameId];
+    if (!def) return;
+    const card = document.createElement('article');
+    card.className = 'practice-game-card';
+
+    const title = document.createElement('h3');
+    title.textContent = def.icon + ' ' + def.name;
+    const description = document.createElement('p');
+    description.textContent = PRACTICE_DESCRIPTIONS[gameId] || def.instruction;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn--primary';
+    button.textContent = 'Practice';
+    button.addEventListener('click', function () { startPracticeGame(gameId); });
+
+    card.appendChild(title);
+    card.appendChild(description);
+    card.appendChild(button);
+    dom['practice-games'].appendChild(card);
+  });
+
+  gameState.state = 'practice';
+  showScreen('practice');
+}
+
+function startPracticeGame(gameId) {
+  if (!MINIGAME_REGISTRY[gameId]) return;
+  stopActiveMinigame();
+  gameState.practiceMode = true;
+  gameState.practiceGameId = gameId;
+  gameState.practiceScore = 0;
+  dom['practice-score'].textContent = '0';
+  startMinigame(gameId);
+}
+
+function showPracticeResult(name, summary) {
+  gameState.state = 'practiceResult';
+  dom['practice-result-name'].textContent = name;
+  dom['practice-result-summary'].textContent = summary || 'Practice round complete.';
+  dom['practice-result-score'].textContent = String(gameState.practiceScore);
+  showScreen('practiceResult');
+}
+
+function handleMinigameMenu() {
+  if (gameState.practiceMode) {
+    openPracticeRange();
+    return;
+  }
+  returnToMenu();
+}
+
+function retryPracticeGame() {
+  if (!gameState.practiceGameId) {
+    openPracticeRange();
+    return;
+  }
+  startPracticeGame(gameState.practiceGameId);
+}
+
 /* ==================================================================
    MINIGAME REGISTRY — THE place where minigames are added or removed.
    ------------------------------------------------------------------
@@ -487,7 +589,7 @@ function handleContinueRound() {
    To REPLACE one: swap the id inside MINIGAME_IDS. Nothing else changes.
    ================================================================== */
 
-const MINIGAME_IDS = ['whackAMole', 'reactionTest', 'mathQuiz', 'memoryGame', 'typingChallenge'];   // the board shuffles all implemented games across its tiles
+const MINIGAME_IDS = ['whackAMole', 'reactionTest', 'mathQuiz', 'memoryGame', 'typingChallenge', 'numberSequence'];   // all implemented games can appear on the board
 
 const MINIGAME_REGISTRY = {
 
@@ -827,6 +929,7 @@ const MINIGAME_REGISTRY = {
     id: 'memoryGame',
     name: 'Memory Game',
     icon: '🃏',
+    durationSeconds: MEMORY_GAME_SECONDS,
     instruction: 'Flip two cards to find a matching pair. Matches earn +2; misses do not change your score.',
     _state: null,
 
@@ -936,6 +1039,126 @@ const MINIGAME_REGISTRY = {
       game.appendChild(grid);
       game.appendChild(feedback);
       ctx.container.appendChild(game);
+    },
+
+    cleanup: function () {
+      this._state = null;
+    },
+  },
+
+  /* Number Sequence: find the next value in a clear number pattern. */
+  numberSequence: {
+    id: 'numberSequence',
+    name: 'Number Sequence',
+    icon: '🔢',
+    instruction: 'Find the pattern and choose the next number. Correct answers earn +1; wrong answers cost 1 point.',
+    _state: null,
+
+    start: function (ctx) {
+      const self = this;
+      const state = { answered: false, questionNumber: 0, correctAnswer: null, buttons: [] };
+      this._state = state;
+
+      const game = document.createElement('div');
+      game.className = 'number-sequence';
+      const progress = document.createElement('p');
+      progress.className = 'number-sequence-progress';
+      const sequence = document.createElement('h3');
+      sequence.className = 'number-sequence-question';
+      sequence.setAttribute('aria-live', 'polite');
+      const answers = document.createElement('div');
+      answers.className = 'number-sequence-answers';
+      const feedback = document.createElement('p');
+      feedback.className = 'number-sequence-feedback';
+      feedback.setAttribute('role', 'status');
+
+      for (let i = 0; i < 4; i++) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'number-sequence-answer';
+        state.buttons.push(button);
+        answers.appendChild(button);
+        ctx.bindEvent(button, 'click', function () {
+          if (self._state !== state || state.answered || !ctx.isMatchActive()) return;
+          state.answered = true;
+          const correct = Number(button.dataset.answer) === state.correctAnswer;
+          ctx.addPoints(correct ? 1 : -1);
+          state.buttons.forEach(function (answerButton) {
+            answerButton.disabled = true;
+            if (Number(answerButton.dataset.answer) === state.correctAnswer) answerButton.classList.add('is-correct');
+            if (answerButton === button && !correct) answerButton.classList.add('is-wrong');
+          });
+          feedback.classList.remove('is-correct', 'is-wrong');
+          feedback.classList.add(correct ? 'is-correct' : 'is-wrong');
+          feedback.textContent = correct ? 'Correct! +1 point' : 'Not quite. The answer was ' + state.correctAnswer + '. −1 point';
+          ctx.scheduleTimeout(function () {
+            if (self._state === state && ctx.isMatchActive()) showQuestion();
+          }, 600);
+        });
+      }
+
+      game.appendChild(progress);
+      game.appendChild(sequence);
+      game.appendChild(answers);
+      game.appendChild(feedback);
+      ctx.container.appendChild(game);
+
+      function makeQuestion(number) {
+        const level = Math.floor((number - 1) / 3);
+        let values;
+        let answer;
+        const kind = level === 0 ? randomInt(0, 2) : randomInt(0, 4);
+
+        if (kind === 0) {
+          const start = randomInt(2, 12);
+          const step = randomInt(2, 6);
+          values = [0, 1, 2, 3].map(function (i) { return start + step * i; });
+          answer = start + step * 4;
+        } else if (kind === 1) {
+          const step = randomInt(3, 9);
+          const start = randomInt(55, 95);
+          values = [0, 1, 2, 3].map(function (i) { return start - step * i; });
+          answer = start - step * 4;
+        } else if (kind === 2 || kind === 3) {
+          const factor = kind === 2 ? 2 : 3;
+          const start = kind === 2 ? randomInt(2, 5) : randomInt(1, 3);
+          values = [start, start * factor, start * factor * factor, start * factor * factor * factor];
+          answer = values[3] * factor;
+        } else {
+          const start = randomInt(1, 4);
+          values = [start, start + 1, start + 3, start + 6];
+          answer = start + 10;
+        }
+
+        const choices = new Set([answer]);
+        const offsets = [-8, -5, -3, 3, 5, 8, 10];
+        while (choices.size < 4) {
+          const offset = offsets[randomInt(0, offsets.length - 1)];
+          const candidate = answer + offset;
+          if (candidate >= 0) choices.add(candidate);
+        }
+        return { values: values, answer: answer, choices: shuffleArray(Array.from(choices)) };
+      }
+
+      function showQuestion() {
+        if (self._state !== state || !ctx.isMatchActive()) return;
+        state.questionNumber += 1;
+        const next = makeQuestion(state.questionNumber);
+        state.correctAnswer = next.answer;
+        state.answered = false;
+        progress.textContent = 'Question ' + state.questionNumber;
+        sequence.textContent = next.values.join(', ') + ', ?';
+        feedback.textContent = '';
+        feedback.classList.remove('is-correct', 'is-wrong');
+        state.buttons.forEach(function (button, index) {
+          button.textContent = String(next.choices[index]);
+          button.dataset.answer = String(next.choices[index]);
+          button.disabled = false;
+          button.classList.remove('is-correct', 'is-wrong');
+        });
+      }
+
+      showQuestion();
     },
 
     cleanup: function () {
@@ -1195,6 +1418,9 @@ function startNewMatch() {
   gameState.diceValue = 0;
   gameState.roundStartScore = 0;
   gameState.matchOver = false;      // a new match may be scored again
+  gameState.practiceMode = false;
+  gameState.practiceGameId = null;
+  gameState.practiceScore = 0;
   gameState.globalEndAt = 0;
 
   gameState.state = 'playing';
@@ -1220,6 +1446,10 @@ function returnToMenu() {
   }
   dom['board-note'].textContent = '';
   gameState.matchOver = false;   // the menu is always a clean starting point
+  gameState.practiceMode = false;
+  gameState.practiceGameId = null;
+  gameState.practiceScore = 0;
+  dom['practice-score-chip'].hidden = true;
   gameState.state = 'menu';
   showScreen('menu');
 }
@@ -1282,12 +1512,17 @@ function renderFinalResults() {
 function wireEvents() {
   // Every core listener is added EXACTLY ONCE, here. No inline HTML handlers.
   document.getElementById('btn-play-with-friend').addEventListener('click', openInstructions);
+  document.getElementById('btn-open-practice').addEventListener('click', openPracticeRange);
+  document.getElementById('btn-menu-from-practice').addEventListener('click', returnToMenu);
+  document.getElementById('btn-practice-retry').addEventListener('click', retryPracticeGame);
+  document.getElementById('btn-practice-list').addEventListener('click', openPracticeRange);
+  document.getElementById('btn-menu-from-practice-result').addEventListener('click', returnToMenu);
   document.getElementById('btn-continue').addEventListener('click', openReady);
   document.getElementById('btn-start-game').addEventListener('click', startNewMatch);
   document.getElementById('btn-menu-from-instructions').addEventListener('click', returnToMenu);
   document.getElementById('btn-menu-from-ready').addEventListener('click', returnToMenu);
   document.getElementById('btn-menu-from-game').addEventListener('click', returnToMenu);
-  document.getElementById('btn-menu-from-minigame').addEventListener('click', returnToMenu);
+  document.getElementById('btn-menu-from-minigame').addEventListener('click', handleMinigameMenu);
   document.getElementById('btn-menu-from-gameover').addEventListener('click', returnToMenu);
   document.getElementById('btn-roll').addEventListener('click', rollDice);
   document.getElementById('btn-continue-round').addEventListener('click', handleContinueRound);
