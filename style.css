@@ -606,6 +606,54 @@ p  { margin: var(--space-2) 0; }
   .memory-card.is-flipped { animation: none; }
 }
 
+/* ---- Typing Challenge ---- */
+.typing-game {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  width: min(100%, 620px);
+  margin: 0 auto;
+}
+
+.typing-prompt { margin: 0; color: var(--color-muted); font-weight: 700; text-align: center; }
+
+.typing-target {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  margin: 0;
+  padding: var(--space-4);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-1);
+  color: var(--color-text);
+  font-size: clamp(1.7rem, 6vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.typing-input {
+  width: 100%;
+  min-height: 62px;
+  padding: var(--space-3) var(--space-4);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1.25rem;
+  text-align: center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.typing-input:focus { border-color: var(--color-primary); }
+.typing-progress { margin: 0; color: var(--color-muted); font-size: 0.95rem; font-weight: 700; text-align: center; }
+.typing-feedback { min-height: 1.5em; margin: 0; color: var(--color-correct); font-weight: 700; text-align: center; }
+
 @keyframes pop {
   from { transform: scale(0.8); opacity: 0; }
   to { transform: scale(1); opacity: 1; }

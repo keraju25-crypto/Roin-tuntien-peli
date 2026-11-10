@@ -269,7 +269,7 @@ function isMatchActive() {
 }
 
 function addPoints(delta) {
-  // The only way points are ever changed: +1 correct, -1 wrong, floor at 0.
+  // The only way minigames change scores; each game chooses the reward, floor at 0.
   if (gameState.state !== 'minigame') return false;
   const player = currentPlayer();
   player.score = Math.max(0, player.score + delta);
@@ -476,7 +476,7 @@ function handleContinueRound() {
      start(ctx)  – builds the game into ctx.container and binds input
      cleanup()   – drops its own temporary state (called automatically)
 
-   A minigame scores ONLY through ctx.addPoints(+1 / -1) and finishes
+   A minigame scores ONLY through ctx.addPoints(...) and finishes
    ONLY through ctx.endMinigame(). It must never touch gameState
    directly — that is what keeps the board, dice, turns and scoring
    independent from individual games.
@@ -487,7 +487,7 @@ function handleContinueRound() {
    To REPLACE one: swap the id inside MINIGAME_IDS. Nothing else changes.
    ================================================================== */
 
-const MINIGAME_IDS = ['whackAMole', 'reactionTest', 'mathQuiz', 'memoryGame'];   // the board shuffles all implemented games across its tiles
+const MINIGAME_IDS = ['whackAMole', 'reactionTest', 'mathQuiz', 'memoryGame', 'typingChallenge'];   // the board shuffles all implemented games across its tiles
 
 const MINIGAME_REGISTRY = {
 
@@ -496,7 +496,7 @@ const MINIGAME_REGISTRY = {
     id: 'whackAMole',
     name: 'Whack-a-Mole',
     icon: '🔨',
-    instruction: 'Click the mole when it pops up. Clicking an empty hole costs 1 point.',
+    instruction: 'Each mole hit gives +1 point (up to 10 hit points). An empty hole costs 1 point.',
     _state: null,
 
     start: function (ctx) {
@@ -506,6 +506,7 @@ const MINIGAME_REGISTRY = {
         activeIndex: -1,
         token: 0,
         locked: false,
+        successfulHits: 0,
       };
       this._state = state;
 
@@ -569,8 +570,13 @@ const MINIGAME_REGISTRY = {
           state.token += 1;
           hideMole();
           state.moleActive = false;
-          ctx.addPoints(1);
-          showFloat(grid, '+1', true);
+          if (state.successfulHits < 10) {
+            state.successfulHits += 1;
+            ctx.addPoints(1);
+            showFloat(grid, '+1', true);
+          } else {
+            showFloat(grid, 'MAX', true);
+          }
           scheduleNext(80);
         } else {
           ctx.addPoints(-1);
@@ -646,15 +652,15 @@ const MINIGAME_REGISTRY = {
 
         const reactionMs = performance.now() - state.greenAt;
         let points = 1;
-        if (reactionMs < 200) points = 10;
-        else if (reactionMs < 300) points = 9;
-        else if (reactionMs < 450) points = 8;
-        else if (reactionMs < 650) points = 7;
-        else if (reactionMs < 900) points = 6;
-        else if (reactionMs < 1200) points = 5;
-        else if (reactionMs < 1600) points = 4;
-        else if (reactionMs < 2200) points = 3;
-        else if (reactionMs < 3000) points = 2;
+        if (reactionMs < 150) points = 10;
+        else if (reactionMs < 200) points = 9;
+        else if (reactionMs < 250) points = 8;
+        else if (reactionMs < 350) points = 7;
+        else if (reactionMs < 500) points = 6;
+        else if (reactionMs < 700) points = 5;
+        else if (reactionMs < 950) points = 4;
+        else if (reactionMs < 1300) points = 3;
+        else if (reactionMs < 1800) points = 2;
 
         const message = Math.round(reactionMs) + ' ms — ' + points + ' / 10 points!';
         finishAttempt(points, message);
@@ -821,7 +827,7 @@ const MINIGAME_REGISTRY = {
     id: 'memoryGame',
     name: 'Memory Game',
     icon: '🃏',
-    instruction: 'Flip two cards to find a matching pair. Matches earn +1; misses lose 1 point.',
+    instruction: 'Flip two cards to find a matching pair. Matches earn +2; misses do not change your score.',
     _state: null,
 
     start: function (ctx) {
@@ -895,9 +901,9 @@ const MINIGAME_REGISTRY = {
             first.button.disabled = true;
             second.button.disabled = true;
             state.matchedPairs += 1;
-            ctx.addPoints(1);
+            ctx.addPoints(2);
             progress.textContent = 'Pairs found: ' + state.matchedPairs + ' / 6';
-            feedback.textContent = 'Match! +1 point';
+            feedback.textContent = 'Match! +2 points';
             state.flipped = [];
 
             if (state.matchedPairs === 6) {
@@ -908,8 +914,7 @@ const MINIGAME_REGISTRY = {
           }
 
           state.locked = true;
-          ctx.addPoints(-1);
-          feedback.textContent = 'No match. −1 point';
+          feedback.textContent = 'No match. Try another pair!';
           ctx.scheduleTimeout(function () {
             if (self._state !== state || state.finished) return;
             state.flipped.forEach(function (cardIndex) {
@@ -931,6 +936,128 @@ const MINIGAME_REGISTRY = {
       game.appendChild(grid);
       game.appendChild(feedback);
       ctx.container.appendChild(game);
+    },
+
+    cleanup: function () {
+      this._state = null;
+    },
+  },
+
+  /* Typing Challenge: type each target accurately before time runs out. */
+  typingChallenge: {
+    id: 'typingChallenge',
+    name: 'Typing Challenge',
+    icon: '⌨️',
+    instruction: 'Type each word or sentence exactly. Short words score +1, medium words +2, and sentences +3 (up to 12 points).',
+    _state: null,
+
+    start: function (ctx) {
+      const self = this;
+      const state = {
+        target: null,
+        targetsTyped: 0,
+        pointsEarned: 0,
+        locked: false,
+        endAt: Date.now() + MINIGAME_SECONDS * 1000 - 10,
+      };
+      const maxRoundPoints = 12;
+      this._state = state;
+
+      const game = document.createElement('div');
+      game.className = 'typing-game';
+
+      const prompt = document.createElement('p');
+      prompt.className = 'typing-prompt';
+      prompt.textContent = 'Type this text:';
+
+      const targetText = document.createElement('p');
+      targetText.className = 'typing-target';
+      targetText.setAttribute('aria-live', 'polite');
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'typing-input';
+      input.autocomplete = 'off';
+      input.autocapitalize = 'off';
+      input.spellcheck = false;
+      input.maxLength = 40;
+      input.setAttribute('aria-label', 'Type the displayed word or sentence');
+
+      const progress = document.createElement('p');
+      progress.className = 'typing-progress';
+      progress.textContent = 'Typed: 0 · Round points: 0 / ' + maxRoundPoints;
+
+      const feedback = document.createElement('p');
+      feedback.className = 'typing-feedback';
+      feedback.setAttribute('role', 'status');
+      feedback.textContent = 'Keep typing until the timer ends.';
+
+      const shortTargets = [
+        { text: 'sun', points: 1 }, { text: 'milk', points: 1 },
+        { text: 'game', points: 1 }, { text: 'blue', points: 1 },
+        { text: 'tree', points: 1 }, { text: 'star', points: 1 },
+      ];
+      const mediumTargets = [
+        { text: 'school', points: 2 }, { text: 'puzzle', points: 2 },
+        { text: 'window', points: 2 }, { text: 'friend', points: 2 },
+        { text: 'bright', points: 2 }, { text: 'rocket', points: 2 },
+        { text: 'weekend', points: 2 }, { text: 'teamwork', points: 2 },
+      ];
+      const sentenceTargets = [
+        { text: 'friends play after school', points: 3 },
+        { text: 'the team solved the puzzle', points: 3 },
+        { text: 'practice makes you faster', points: 3 },
+        { text: 'we build cool games together', points: 3 },
+      ];
+
+      function chooseTarget() {
+        let next;
+        do {
+          const roll = randomInt(1, 6);
+          const choices = roll === 1 ? sentenceTargets : (roll <= 3 ? mediumTargets : shortTargets);
+          next = choices[randomInt(0, choices.length - 1)];
+        } while (state.target && next.text === state.target.text);
+        return next;
+      }
+
+      function normalizeText(value) {
+        return value.trim().replace(/\s+/g, ' ').toLowerCase();
+      }
+
+      function showNextTarget() {
+        state.target = chooseTarget();
+        targetText.textContent = state.target.text;
+        input.value = '';
+        input.focus();
+      }
+
+      ctx.bindEvent(input, 'input', function () {
+        if (self._state !== state || state.locked || !ctx.isMatchActive() || Date.now() >= state.endAt) return;
+        if (normalizeText(input.value) !== state.target.text) return;
+
+        state.locked = true;
+        const target = state.target;
+        const points = Math.min(target.points, maxRoundPoints - state.pointsEarned);
+        if (points > 0) {
+          ctx.addPoints(points);
+          state.pointsEarned += points;
+        }
+        state.targetsTyped += 1;
+        progress.textContent = 'Typed: ' + state.targetsTyped + ' · Round points: ' + state.pointsEarned + ' / ' + maxRoundPoints;
+        feedback.textContent = points > 0 ? 'Correct! +' + points + (points === 1 ? ' point' : ' points') : 'Correct! Round point limit reached.';
+        feedback.classList.add('is-correct');
+
+        showNextTarget();
+        state.locked = false;
+      });
+
+      game.appendChild(prompt);
+      game.appendChild(targetText);
+      game.appendChild(input);
+      game.appendChild(progress);
+      game.appendChild(feedback);
+      ctx.container.appendChild(game);
+      showNextTarget();
     },
 
     cleanup: function () {
