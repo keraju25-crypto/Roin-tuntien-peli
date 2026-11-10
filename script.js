@@ -21,6 +21,8 @@ const BOARD_SIZE = 12;          // tiles on the board
 const MATCH_DURATION_MS = 5 * 60 * 1000;  // the global match lasts 5 minutes
 const MINIGAME_SECONDS = 10;    // each minigame normally lasts 10 seconds
 const MEMORY_GAME_SECONDS = 14; // Memory Game gets extra time to find pairs
+const UPGRADER_MULTIPLIERS = [2, 4, 6, 8, 10, 20];
+const UPGRADER_HOUSE_EDGE = 0.05;
 const GLOBAL_TICK_MS = 250;     // how often the global timer display updates
 const MINIGAME_TICK_MS = 100;   // how often the minigame timer updates
 const MOVE_STEP_MS = 260;       // pause between movement steps (animation)
@@ -56,6 +58,10 @@ const gameState = {
   practiceMode: false,
   practiceScore: 0,
   practiceGameId: null,
+  pendingUpgrade: null,
+  upgraderListeners: [],
+  upgraderSpinStartTimeoutId: null,
+  upgraderSpinFallbackId: null,
 };
 
 // DOM elements are looked up once, in cacheDom().
@@ -105,6 +111,7 @@ const SCREENS = {
   ready: 'screen-ready',
   playing: 'screen-game',
   minigame: 'screen-minigame',
+  upgrader: 'screen-upgrader',
   roundResult: 'screen-round-result',
   gameOver: 'screen-game-over',
   practice: 'screen-practice',
@@ -131,6 +138,12 @@ function cacheDom() {
     'player-score-0', 'player-score-1',
     'minigame-name', 'minigame-instruction', 'minigame-area', 'minigame-timer',
     'btn-menu-from-minigame',
+    'upgrader-game-name', 'upgrader-player-name', 'upgrader-stake', 'upgrader-wheel',
+    'upgrader-card',
+    'upgrader-wheel-odds', 'upgrader-marker-orbit', 'upgrader-multiplier-selector', 'upgrader-multiplier-value',
+    'upgrader-win-chance', 'upgrader-payout', 'upgrader-position-slider',
+    'upgrader-position-value', 'upgrader-feedback', 'btn-upgrader-spin',
+    'btn-upgrader-keep', 'btn-upgrader-continue',
     'result-game-name', 'result-summary', 'result-delta',
     'result-score-0', 'result-score-1', 'btn-continue-round',
     'final-heading', 'final-scores', 'winner-text',
@@ -434,25 +447,371 @@ function stopActiveMinigame() {
   gameState.activeMinigameId = null;
 }
 
+function bindUpgraderEvent(target, type, handler) {
+  target.addEventListener(type, handler);
+  gameState.upgraderListeners.push({ target: target, type: type, handler: handler });
+}
+
+function clearUpgraderListeners() {
+  gameState.upgraderListeners.forEach(function (item) {
+    item.target.removeEventListener(item.type, item.handler);
+  });
+  gameState.upgraderListeners = [];
+}
+
+function clearUpgraderTimers() {
+  if (gameState.upgraderSpinStartTimeoutId !== null) {
+    clearTimeout(gameState.upgraderSpinStartTimeoutId);
+    gameState.upgraderSpinStartTimeoutId = null;
+  }
+  if (gameState.upgraderSpinFallbackId !== null) {
+    clearTimeout(gameState.upgraderSpinFallbackId);
+    gameState.upgraderSpinFallbackId = null;
+  }
+}
+
+function clearUpgraderSession() {
+  clearUpgraderTimers();
+  clearUpgraderListeners();
+}
+
+function getUpgradeProbability(multiplier) {
+  return (1 / multiplier) * (1 - UPGRADER_HOUSE_EDGE);
+}
+
+function formatUpgradePercent(probability) {
+  return (probability * 100).toFixed(4).replace(/\.?0+$/, '') + '%';
+}
+
+function formatUpgradePosition(position) {
+  if (position === 0) return '0° · TOP';
+  if (Math.abs(position) === 180) return (position < 0 ? '−180°' : '+180°') + ' · BOTTOM';
+  const direction = position > 0 ? '+' : '−';
+  const landmark = Math.abs(position) === 90 ? ' · ' + (position > 0 ? 'RIGHT' : 'LEFT') : '';
+  return direction + Math.abs(position) + '°' + landmark;
+}
+
+function updateUpgraderDisplay(pending) {
+  const probability = getUpgradeProbability(pending.multiplier);
+  pending.probability = probability;
+  const winningAngle = probability * 360;
+  const startAngle = pending.position - winningAngle / 2;
+
+  dom['upgrader-multiplier-value'].textContent = pending.multiplier + 'x';
+  dom['upgrader-win-chance'].textContent = formatUpgradePercent(probability);
+  dom['upgrader-wheel-odds'].textContent = formatUpgradePercent(probability);
+  dom['upgrader-payout'].textContent = String(pending.stake * pending.multiplier) + ' points';
+  dom['upgrader-position-value'].textContent = formatUpgradePosition(pending.position);
+  dom['upgrader-wheel'].style.setProperty('--winning-angle', winningAngle + 'deg');
+  dom['upgrader-wheel'].style.setProperty('--winning-start', startAngle + 'deg');
+  dom['upgrader-wheel'].setAttribute('aria-label', pending.multiplier + 'x wheel, ' + formatUpgradePercent(probability) + ' win chance');
+  dom['upgrader-wheel'].setAttribute('aria-valuenow', String(pending.position));
+  dom['upgrader-wheel'].setAttribute('aria-valuetext', formatUpgradePosition(pending.position));
+  dom['upgrader-multiplier-selector'].querySelectorAll('[data-multiplier]').forEach(function (button) {
+    const selected = Number(button.dataset.multiplier) === pending.multiplier;
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-checked', String(selected));
+  });
+}
+
+function setUpgraderPosition(pending, position) {
+  pending.position = Math.max(-180, Math.min(180, Math.round(position)));
+  dom['upgrader-position-slider'].value = String(pending.position);
+  updateUpgraderDisplay(pending);
+}
+
+function updatePositionFromPointer(pending, event) {
+  const bounds = dom['upgrader-wheel'].getBoundingClientRect();
+  const centerX = bounds.left + bounds.width / 2;
+  const centerY = bounds.top + bounds.height / 2;
+  const degrees = Math.atan2(event.clientX - centerX, centerY - event.clientY) * 180 / Math.PI;
+  setUpgraderPosition(pending, degrees);
+}
+
+function setUpgraderControlsLocked(locked) {
+  dom['upgrader-multiplier-selector'].querySelectorAll('[data-multiplier]').forEach(function (button) {
+    button.disabled = locked;
+  });
+  dom['upgrader-position-slider'].disabled = locked;
+  dom['btn-upgrader-spin'].disabled = locked;
+  dom['btn-upgrader-keep'].disabled = locked;
+  dom['upgrader-wheel'].setAttribute('aria-disabled', String(locked));
+}
+
+function openUpgrader(options) {
+  clearUpgraderSession();
+  const pending = {
+    mode: options.mode,
+    playerIndex: options.playerIndex,
+    playerName: currentPlayer().name,
+    baseScore: options.baseScore,
+    stake: options.stake,
+    gameName: options.gameName,
+    gameSummary: options.gameSummary,
+    multiplier: UPGRADER_MULTIPLIERS[0],
+    position: 0,
+    spinning: false,
+    settled: false,
+    won: false,
+    payout: 0,
+    outcome: null,
+  };
+  gameState.pendingUpgrade = pending;
+  gameState.state = 'upgrader';
+
+  dom['upgrader-game-name'].textContent = pending.gameName;
+  dom['upgrader-player-name'].textContent = pending.playerName + (pending.mode === 'practice' ? ' · PRACTICE' : '');
+  dom['upgrader-stake'].textContent = String(pending.stake);
+  dom['upgrader-multiplier-selector'].querySelectorAll('[data-multiplier]').forEach(function (button) {
+    button.disabled = false;
+  });
+  dom['upgrader-position-slider'].value = '0';
+  dom['upgrader-feedback'].classList.remove('is-win', 'is-loss');
+  dom['upgrader-card'].classList.remove('is-win', 'is-loss');
+  dom['upgrader-feedback'].textContent = 'Choose a multiplier and position, then spin or keep your score.';
+  dom['btn-upgrader-spin'].hidden = false;
+  dom['btn-upgrader-keep'].hidden = false;
+  dom['btn-upgrader-continue'].hidden = true;
+  setUpgraderControlsLocked(false);
+
+  const wheel = dom['upgrader-wheel'];
+  const markerOrbit = dom['upgrader-marker-orbit'];
+  markerOrbit.style.transition = 'none';
+  markerOrbit.style.transform = 'rotate(0deg)';
+  void wheel.offsetWidth;
+  updateUpgraderDisplay(pending);
+  showScreen('upgrader');
+
+  dom['upgrader-multiplier-selector'].querySelectorAll('[data-multiplier]').forEach(function (button) {
+    bindUpgraderEvent(button, 'click', function () {
+      if (gameState.pendingUpgrade !== pending || pending.spinning || pending.settled) return;
+      pending.multiplier = Number(button.dataset.multiplier);
+      updateUpgraderDisplay(pending);
+    });
+  });
+  bindUpgraderEvent(dom['upgrader-position-slider'], 'input', function () {
+    if (gameState.pendingUpgrade !== pending || pending.spinning || pending.settled) return;
+    pending.position = Number(dom['upgrader-position-slider'].value);
+    updateUpgraderDisplay(pending);
+  });
+  bindUpgraderEvent(wheel, 'pointerdown', function (event) {
+    if (gameState.pendingUpgrade !== pending || pending.spinning || pending.settled) return;
+    pending.dragging = true;
+    if (wheel.setPointerCapture) wheel.setPointerCapture(event.pointerId);
+    updatePositionFromPointer(pending, event);
+    event.preventDefault();
+  });
+  bindUpgraderEvent(wheel, 'pointermove', function (event) {
+    if (!pending.dragging || gameState.pendingUpgrade !== pending || pending.spinning || pending.settled) return;
+    updatePositionFromPointer(pending, event);
+  });
+  bindUpgraderEvent(wheel, 'pointerup', function () { pending.dragging = false; });
+  bindUpgraderEvent(wheel, 'pointercancel', function () { pending.dragging = false; });
+  bindUpgraderEvent(wheel, 'keydown', function (event) {
+    if (pending.spinning || pending.settled) return;
+    let nextPosition = pending.position;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') nextPosition -= event.shiftKey ? 10 : 1;
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') nextPosition += event.shiftKey ? 10 : 1;
+    else return;
+    event.preventDefault();
+    setUpgraderPosition(pending, Math.max(-180, Math.min(180, nextPosition)));
+  });
+  bindUpgraderEvent(dom['btn-upgrader-spin'], 'click', function () { startUpgraderSpin(pending); });
+  bindUpgraderEvent(dom['btn-upgrader-keep'], 'click', function () { finishUpgraderDecision(pending, 'keep'); });
+  bindUpgraderEvent(dom['btn-upgrader-continue'], 'click', continueAfterUpgrader);
+  bindUpgraderEvent(markerOrbit, 'transitionend', function (event) {
+    if (event.propertyName === 'transform') completeUpgraderSpin(pending);
+  });
+}
+
+function chooseSpinRotation(pending) {
+  const winAngle = getUpgradeProbability(pending.multiplier) * 360;
+  const half = winAngle / 2;
+  const margin = Math.min(0.6, half / 3);
+  let offsetFromCenter;
+
+  if (pending.won) {
+    offsetFromCenter = (Math.random() * (winAngle - margin * 2)) - half + margin;
+  } else {
+    const losingAngle = 360 - winAngle;
+    offsetFromCenter = half + margin + Math.random() * (losingAngle - margin * 2);
+  }
+
+  // The wheel is stationary; the orbiting marker moves clockwise from the top.
+  const centerAngle = ((pending.position % 360) + 360) % 360;
+  const markerFinalAngle = ((centerAngle + offsetFromCenter) % 360 + 360) % 360;
+  pending.targetRotation = 360 * 7 + markerFinalAngle;
+  return pending.targetRotation;
+}
+
+function startUpgraderSpin(pending) {
+  if (gameState.pendingUpgrade !== pending || gameState.state !== 'upgrader' || pending.spinning || pending.settled) return;
+  if (pending.mode === 'match' && gameState.matchOver) return;
+
+  if (!UPGRADER_MULTIPLIERS.includes(pending.multiplier)) return;
+  pending.position = Number(dom['upgrader-position-slider'].value);
+  const probability = getUpgradeProbability(pending.multiplier);
+  pending.probability = probability;
+  pending.won = Math.random() < probability;
+  pending.payout = pending.won ? pending.stake * pending.multiplier : 0;
+  pending.outcome = pending.won ? 'win' : 'loss';
+  pending.spinning = true;
+  chooseSpinRotation(pending);
+
+  const markerOrbit = dom['upgrader-marker-orbit'];
+  markerOrbit.dataset.finalRotation = String(pending.targetRotation);
+  markerOrbit.dataset.outcome = pending.outcome;
+  setUpgraderControlsLocked(true);
+  dom['btn-upgrader-continue'].hidden = true;
+  dom['upgrader-feedback'].classList.remove('is-win', 'is-loss');
+  dom['upgrader-feedback'].textContent = 'Spinning…';
+  markerOrbit.style.transition = 'transform 5.8s cubic-bezier(0.08, 0.72, 0.12, 1)';
+  void markerOrbit.offsetWidth;
+
+  gameState.upgraderSpinStartTimeoutId = setTimeout(function () {
+    gameState.upgraderSpinStartTimeoutId = null;
+    if (gameState.pendingUpgrade !== pending || !pending.spinning) return;
+    markerOrbit.style.transform = 'rotate(' + pending.targetRotation + 'deg)';
+  }, 30);
+  gameState.upgraderSpinFallbackId = setTimeout(function () {
+    gameState.upgraderSpinFallbackId = null;
+    completeUpgraderSpin(pending);
+  }, 6200);
+}
+
+function settleUpgraderScore(pending, payout) {
+  if (pending.settled) return false;
+  if (pending.mode === 'match' && gameState.matchOver) return false;
+
+  pending.settled = true;
+  pending.payout = payout;
+  if (pending.mode === 'practice') {
+    gameState.practiceScore = payout;
+    if (dom['practice-score']) dom['practice-score'].textContent = String(payout);
+  } else {
+    gameState.players[pending.playerIndex].score = pending.baseScore + payout;
+    updateScoreDisplay();
+  }
+  return true;
+}
+
+function describeUpgraderOutcome(pending) {
+  if (pending.outcome === 'keep') return 'Score kept: ' + pending.stake + ' points.';
+  if (pending.won) return 'WIN! ' + pending.multiplier + 'x: ' + pending.stake + ' → ' + pending.payout + ' points.';
+  return 'LOSS. The ' + pending.stake + '-point stake was lost at ' + pending.multiplier + 'x.';
+}
+
+function showUpgraderOutcome(pending) {
+  gameState.state = 'upgraderResult';
+  setUpgraderControlsLocked(true);
+  dom['upgrader-feedback'].classList.remove('is-win', 'is-loss');
+  dom['upgrader-card'].classList.remove('is-win', 'is-loss');
+  if (pending.won || pending.outcome === 'keep') {
+    dom['upgrader-feedback'].classList.add('is-win');
+    dom['upgrader-card'].classList.add('is-win');
+  } else {
+    dom['upgrader-feedback'].classList.add('is-loss');
+    dom['upgrader-card'].classList.add('is-loss');
+  }
+  dom['upgrader-feedback'].textContent = describeUpgraderOutcome(pending);
+  dom['upgrader-wheel'].setAttribute('aria-label', pending.won ? 'Win' : (pending.outcome === 'keep' ? 'Score kept' : 'Loss'));
+  dom['btn-upgrader-spin'].hidden = true;
+  dom['btn-upgrader-keep'].hidden = true;
+  dom['btn-upgrader-continue'].hidden = false;
+}
+
+function finishUpgraderDecision(pending, outcome) {
+  if (gameState.pendingUpgrade !== pending || gameState.state !== 'upgrader' || pending.spinning || pending.settled) return;
+  pending.outcome = outcome;
+  pending.won = outcome === 'keep';
+  if (!settleUpgraderScore(pending, pending.stake)) return;
+  showUpgraderOutcome(pending);
+}
+
+function completeUpgraderSpin(pending) {
+  if (gameState.pendingUpgrade !== pending || gameState.state !== 'upgrader' || !pending.spinning || pending.settled) return;
+  pending.spinning = false;
+  clearUpgraderTimers();
+  if (!settleUpgraderScore(pending, pending.won ? pending.payout : 0)) return;
+  showUpgraderOutcome(pending);
+}
+
+function continueAfterUpgrader() {
+  const pending = gameState.pendingUpgrade;
+  if (!pending || !pending.settled || gameState.state !== 'upgraderResult') return;
+  clearUpgraderSession();
+  gameState.pendingUpgrade = null;
+  const summary = describeUpgraderOutcome(pending);
+  if (pending.mode === 'practice') {
+    showPracticeResult(pending.gameName, summary);
+  } else {
+    showRoundResult({ name: pending.gameName, summary: summary, delta: pending.payout });
+  }
+}
+
+function settlePendingUpgraderBeforeMatchEnd() {
+  const pending = gameState.pendingUpgrade;
+  if (!pending) return;
+
+  if (!pending.settled) {
+    // If a spin is already underway its outcome was chosen before animation.
+    // If the player was still deciding, keep the original stake automatically.
+    if (pending.spinning) {
+      settleUpgraderScore(pending, pending.won ? pending.payout : 0);
+    } else {
+      settleUpgraderScore(pending, pending.stake);
+    }
+  }
+  if (pending.spinning) {
+    dom['upgrader-marker-orbit'].style.transition = 'none';
+    pending.spinning = false;
+  }
+  clearUpgraderSession();
+  gameState.pendingUpgrade = null;
+}
+
+function cancelUpgraderAndKeepScore() {
+  const pending = gameState.pendingUpgrade;
+  if (!pending) return;
+  if (!pending.settled) settleUpgraderScore(pending, pending.stake);
+  if (pending.spinning) {
+    dom['upgrader-marker-orbit'].style.transition = 'none';
+    pending.spinning = false;
+  }
+  clearUpgraderSession();
+  gameState.pendingUpgrade = null;
+}
+
 function endMinigame(result) {
   // The one and only way a minigame finishes — either the game calls
   // ctx.endMinigame() itself, or its 10-second timer calls it for you.
   if (gameState.state !== 'minigame') return;   // double calls are ignored
   const def = MINIGAME_REGISTRY[gameState.activeMinigameId];
   if (gameState.practiceMode) {
-    const name = def ? def.name : 'Minigame';
     const summary = (result && result.summary) || '';
+    const stake = gameState.practiceScore;
     stopActiveMinigame();
-    showPracticeResult(name, summary);
+    if (stake > 0) {
+      gameState.practiceScore = 0;
+      if (dom['practice-score']) dom['practice-score'].textContent = '0';
+      openUpgrader({ mode: 'practice', playerIndex: gameState.currentPlayerIndex, baseScore: 0, stake: stake, gameName: def ? def.name : 'Minigame', gameSummary: summary });
+    } else {
+      showPracticeResult(def ? def.name : 'Minigame', summary);
+    }
     return;
   }
   const delta = currentPlayer().score - gameState.roundStartScore;
+  const name = def ? def.name : 'Minigame';
+  const summary = (result && result.summary) || '';
   stopActiveMinigame();   // stops timer + timeouts + listeners + cleanup
-  showRoundResult({
-    name: def ? def.name : 'Minigame',
-    summary: (result && result.summary) || '',
-    delta: delta,
-  });
+  if (delta > 0) {
+    const playerIndex = gameState.currentPlayerIndex;
+    currentPlayer().score = gameState.roundStartScore;
+    updateScoreDisplay();
+    openUpgrader({ mode: 'match', playerIndex: playerIndex, baseScore: gameState.roundStartScore, stake: delta, gameName: name, gameSummary: summary });
+    return;
+  }
+  showRoundResult({ name: name, summary: summary, delta: delta });
 }
 
 function showRoundResult(info) {
@@ -1403,6 +1762,7 @@ function startNewMatch() {
   stopDiceAnimation();
   stopMovement();
   stopActiveMinigame();     // (this also stops the minigame timer)
+  cancelUpgraderAndKeepScore();
   if (gameState.boardNoteTimerId !== null) {
     clearTimeout(gameState.boardNoteTimerId);
     gameState.boardNoteTimerId = null;
@@ -1440,6 +1800,7 @@ function returnToMenu() {
   stopDiceAnimation();
   stopMovement();
   stopActiveMinigame();
+  cancelUpgraderAndKeepScore();
   if (gameState.boardNoteTimerId !== null) {
     clearTimeout(gameState.boardNoteTimerId);
     gameState.boardNoteTimerId = null;
@@ -1460,6 +1821,7 @@ function returnToMenu() {
 function endMatch() {
   // Called by the global timer when time runs out — from ANY screen.
   if (gameState.matchOver) return;      // never end the same match twice
+  settlePendingUpgraderBeforeMatchEnd();
   gameState.matchOver = true;           // blocks every future score
 
   // Stop everything that could still affect the game.

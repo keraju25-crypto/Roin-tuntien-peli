@@ -121,6 +121,66 @@
       <div id="minigame-area" class="minigame-area"></div>
     </section>
 
+    <!-- ============ SCORE UPGRADER ============ -->
+    <section id="screen-upgrader" class="screen screen--center">
+      <div id="upgrader-card" class="card upgrader-card">
+        <header class="upgrader-header">
+          <div>
+            <p class="eyebrow">MINIGAME REWARD</p>
+            <h2>UPGRADER</h2>
+            <p id="upgrader-game-name" class="upgrader-game-name">Minigame</p>
+          </div>
+          <div class="upgrader-player-chip"><span class="upgrader-player-dot"></span><span id="upgrader-player-name">Player 1</span></div>
+        </header>
+
+        <div class="upgrader-layout">
+          <div class="upgrader-visual">
+            <span class="upgrader-pointer" aria-hidden="true"></span>
+            <div id="upgrader-wheel" class="upgrader-wheel" role="slider" tabindex="0" aria-label="Winning section position; drag around the wheel to move it" aria-valuemin="-180" aria-valuemax="180" aria-valuenow="0">
+              <span class="upgrader-wheel__ring"></span>
+              <span class="upgrader-wheel__hub"><strong id="upgrader-wheel-odds">47.5%</strong><small>WIN CHANCE</small></span>
+            </div>
+            <div id="upgrader-marker-orbit" class="upgrader-marker-orbit" aria-hidden="true"><span class="upgrader-marker"></span></div>
+            <p class="upgrader-drag-hint">Drag the wheel to position the win zone</p>
+          </div>
+
+          <div class="upgrader-content">
+            <div class="upgrader-stake-row"><span>YOUR STAKE</span><strong><span id="upgrader-stake">0</span><small> points</small></strong></div>
+            <div class="upgrader-stats">
+              <div><span>Multiplier</span><strong id="upgrader-multiplier-value">2x</strong></div>
+              <div><span>Win chance</span><strong id="upgrader-win-chance">47.5%</strong></div>
+              <div><span>Potential payout</span><strong id="upgrader-payout">0</strong></div>
+            </div>
+
+            <div class="upgrader-control">
+              <span class="upgrader-control-title">SELECT MULTIPLIER</span>
+              <div id="upgrader-multiplier-selector" class="upgrader-multiplier-selector" role="radiogroup" aria-label="Select payout multiplier">
+                <button class="upgrader-multiplier-option is-selected" type="button" data-multiplier="2" role="radio" aria-checked="true">2x</button>
+                <button class="upgrader-multiplier-option" type="button" data-multiplier="4" role="radio" aria-checked="false">4x</button>
+                <button class="upgrader-multiplier-option" type="button" data-multiplier="6" role="radio" aria-checked="false">6x</button>
+                <button class="upgrader-multiplier-option" type="button" data-multiplier="8" role="radio" aria-checked="false">8x</button>
+                <button class="upgrader-multiplier-option" type="button" data-multiplier="10" role="radio" aria-checked="false">10x</button>
+                <button class="upgrader-multiplier-option" type="button" data-multiplier="20" role="radio" aria-checked="false">20x</button>
+              </div>
+            </div>
+
+            <label class="upgrader-control" for="upgrader-position-slider">
+              <span class="upgrader-control-title">WINNING ZONE POSITION <strong id="upgrader-position-value">0° · TOP</strong></span>
+              <input id="upgrader-position-slider" class="upgrader-position-slider" type="range" min="-180" max="180" step="1" value="0">
+              <span class="upgrader-range-labels" aria-hidden="true"><span>−180°</span><span>−90°</span><span>0°</span><span>+90°</span><span>+180°</span></span>
+            </label>
+
+            <p id="upgrader-feedback" class="upgrader-feedback" role="status" aria-live="polite">Choose a multiplier and position, then spin or keep your score.</p>
+            <div class="button-row upgrader-actions">
+              <button id="btn-upgrader-spin" class="btn btn--primary upgrader-spin" type="button">SPIN</button>
+              <button id="btn-upgrader-keep" class="btn btn--ghost upgrader-keep" type="button">KEEP SCORE</button>
+              <button id="btn-upgrader-continue" class="btn btn--primary" type="button" hidden>Continue</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ 6. ROUND RESULT (Stage 2) ============ -->
     <section id="screen-round-result" class="screen screen--center">
       <div class="card">
